@@ -1,5 +1,10 @@
 # changelog
 
+## 0.5.0
+- base updater via freshclam
+- quarantine move for hits
+- second yara rule, readme with usage
+
 ## 0.4.0
 - timeout guard against huge archives
 - exclude dirs for scan
