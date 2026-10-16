@@ -1,5 +1,9 @@
 # changelog
 
+## 0.3.0
+- json output for scripts
+- sha256 listing for files
+
 ## 0.2.0
 - clamscan wrapper with archive flags
 - text report, autostart listing
