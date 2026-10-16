@@ -1,5 +1,10 @@
 # changelog
 
+## 0.6.0
+- working yara run via lib or binary
+- toml config, allowlist by sha256
+- log file, exit 1 on hits, rescan flag
+
 ## 0.5.0
 - base updater via freshclam
 - quarantine move for hits
