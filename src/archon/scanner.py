@@ -32,13 +32,17 @@ def build_args(path: str, depth: int, max_mb: int, exclude: tuple[str, ...] = ()
 def parse_line(line: str) -> Hit | None:
     if "FOUND" not in line:
         return None
-    left, _, sig = line.rpartition("FOUND")
-    left = left.strip().rstrip(":")
-    sig = sig.strip()
-    if "!" in left:
-        outer, _, inner = left.partition("!")
+    core = line[: line.rfind("FOUND")].strip().rstrip(":").strip()
+    if ": " not in core:
+        return None
+    loc, _, sig = core.rsplit(": ", 1)
+    loc, sig = loc.strip(), sig.strip()
+    if not loc or not sig:
+        return None
+    if "!" in loc:
+        outer, _, inner = loc.partition("!")
         return Hit(outer.strip(), inner.strip("() "), sig)
-    return Hit(left, "", sig)
+    return Hit(loc, "", sig)
 
 
 def scan(path: str, depth: int = 5, max_mb: int = 512, timeout_sec: int = 600, exclude: tuple[str, ...] = ()) -> list[Hit]:
