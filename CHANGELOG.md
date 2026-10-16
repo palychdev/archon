@@ -1,5 +1,9 @@
 # changelog
 
+## 0.4.0
+- timeout guard against huge archives
+- exclude dirs for scan
+
 ## 0.3.0
 - json output for scripts
 - sha256 listing for files
