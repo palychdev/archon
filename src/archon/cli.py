@@ -5,6 +5,8 @@ from .report import render, render_json
 from .scanner import has_engine, scan
 from .autoruns import list_run_keys, list_startup
 from .hashes import sha256_of, walk_files
+from .update import update
+from .quarantine import quarantine_hits
 
 
 def main() -> int:
@@ -15,13 +17,17 @@ def main() -> int:
     p.add_argument("--autoruns", action="store_true")
     p.add_argument("--json", action="store_true")
     p.add_argument("--hashes", action="store_true")
+    p.add_argument("--update", action="store_true")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--exclude", action="append", default=[])
+    p.add_argument("--quarantine", default="")
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
         print(__version__)
         return 0
+    if a.update:
+        return update()
     if a.autoruns:
         for line in list_run_keys() + list_startup():
             print(line)
@@ -34,6 +40,11 @@ def main() -> int:
         return 2
     cfg = ScanConfig(max_depth=a.depth, max_size_mb=a.max_mb, timeout_sec=a.timeout, exclude=tuple(a.exclude))
     hits = scan(a.path, cfg.max_depth, cfg.max_size_mb, cfg.timeout_sec, cfg.exclude)
+    if a.quarantine:
+        paths = sorted({h.path for h in hits})
+        for dst in quarantine_hits(paths, a.quarantine):
+            print(f"moved {dst}")
+        return 0
     if a.hashes:
         for fp in walk_files(a.path):
             try:
