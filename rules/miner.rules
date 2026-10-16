@@ -1,0 +1,8 @@
+rule miner_xmrig {
+  strings:
+    $a = "xmrig" nocase
+    $b = "cryptonight" nocase
+    $c = "stratum+tcp" nocase
+  condition:
+    2 of them
+}
