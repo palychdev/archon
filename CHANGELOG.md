@@ -1,5 +1,8 @@
 # changelog
 
+## 0.13.0
+- user writable base config, no admin needed
+
 ## 0.12.0
 - auto setup via winget
 
