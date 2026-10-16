@@ -1,5 +1,8 @@
 # changelog
 
+## 0.11.0
+- console menu and simple window, no flags needed
+
 ## 0.10.0
 - parallel yara and entropy, tui progress
 - live eicar parse check passed
