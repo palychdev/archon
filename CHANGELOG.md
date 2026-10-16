@@ -1,5 +1,8 @@
 # changelog
 
+## 0.14.0
+- local bases without admin, exe ready
+
 ## 0.13.0
 - user writable base config, no admin needed
 
