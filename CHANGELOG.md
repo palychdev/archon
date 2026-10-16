@@ -1,5 +1,10 @@
 # changelog
 
+## 0.8.0
+- entropy flag for packed files
+- autoruns snap diff, quarantine restore
+- unofficial sigs option, ci, eicar tests
+
 ## 0.7.0
 - fixed FOUND parse, added tests
 - mit license + third party notes
