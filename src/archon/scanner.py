@@ -14,6 +14,12 @@ def has_engine() -> bool:
     return shutil.which("clamscan") is not None
 
 
+def engine_hint() -> str:
+    if has_engine():
+        return ""
+    return "no clamscan in PATH. install clamav, then run archon --update once"
+
+
 def build_args(path: str, depth: int, max_mb: int, exclude: tuple[str, ...] = ()) -> list[str]:
     args = [
         "clamscan",
