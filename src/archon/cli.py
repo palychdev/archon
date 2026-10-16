@@ -3,13 +3,14 @@ from . import __version__
 from .config import ScanConfig
 from .report import render, render_json
 from .scanner import has_engine, scan
-from .autoruns import list_run_keys, list_startup
+from .autoruns import list_run_keys, list_startup, save_snapshot, diff_snapshot
 from .hashes import sha256_of, walk_files
 from .update import update
-from .quarantine import quarantine_hits
+from .quarantine import quarantine_hits, restore
 from .yarasc import match_file
 from .cfgfile import load_toml
 from .scanner import Hit
+from .entropy import is_packed
 
 
 def main() -> int:
@@ -24,7 +25,12 @@ def main() -> int:
     p.add_argument("--timeout", type=int, default=None)
     p.add_argument("--exclude", action="append", default=None)
     p.add_argument("--quarantine", default="")
+    p.add_argument("--restore", default="")
     p.add_argument("--yara", action="store_true")
+    p.add_argument("--entropy", action="store_true")
+    p.add_argument("--unofficial", action="store_true")
+    p.add_argument("--snap-save", default="")
+    p.add_argument("--snap-diff", default="")
     p.add_argument("--config", default="archon.toml")
     p.add_argument("--log", default="")
     p.add_argument("--rescan", default="")
@@ -34,7 +40,18 @@ def main() -> int:
         print(__version__)
         return 0
     if a.update:
-        return update()
+        return update(a.unofficial)
+    if a.snap_save:
+        save_snapshot(a.snap_save)
+        return 0
+    if a.snap_diff:
+        for line in diff_snapshot(a.snap_diff):
+            print(line)
+        return 0
+    if a.restore:
+        for dst in restore(a.path or ".", a.restore):
+            print(f"restored {dst}")
+        return 0
     if a.autoruns:
         for line in list_run_keys() + list_startup():
             print(line)
@@ -60,6 +77,10 @@ def main() -> int:
         for fp in walk_files(target):
             for rule in match_file(fp):
                 hits.append(Hit(fp, "", f"yara:{rule}"))
+    if a.entropy:
+        for fp in walk_files(target):
+            if is_packed(fp):
+                hits.append(Hit(fp, "", "heuristic:high-entropy"))
     if allow:
         kept: list[Hit] = []
         for h in hits:
