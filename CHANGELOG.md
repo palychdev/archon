@@ -1,5 +1,10 @@
 # changelog
 
+## 0.7.0
+- fixed FOUND parse, added tests
+- mit license + third party notes
+- exe build script
+
 ## 0.6.0
 - working yara run via lib or binary
 - toml config, allowlist by sha256
