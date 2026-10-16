@@ -1,5 +1,8 @@
 # changelog
 
+## 0.12.0
+- auto setup via winget
+
 ## 0.11.0
 - console menu and simple window, no flags needed
 

@@ -1,6 +1,6 @@
 [project]
 name = "archon"
-version = "0.11.0"
+version = "0.12.0"
 description = "deep archive scanner on top of clamav"
 requires-python = ">=3.11"
 
