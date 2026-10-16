@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -8,3 +8,6 @@ class ScanConfig:
     scan_archives: bool = True
     timeout_sec: int = 600
     exclude: tuple[str, ...] = ()
+    use_yara: bool = False
+    allow_sha256: tuple[str, ...] = ()
+    log_file: str = ""
