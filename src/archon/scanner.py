@@ -35,7 +35,7 @@ def parse_line(line: str) -> Hit | None:
     core = line[: line.rfind("FOUND")].strip().rstrip(":").strip()
     if ": " not in core:
         return None
-    loc, _, sig = core.rsplit(": ", 1)
+    loc, sig = core.rsplit(": ", 1)
     loc, sig = loc.strip(), sig.strip()
     if not loc or not sig:
         return None
