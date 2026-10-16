@@ -15,6 +15,8 @@ def main() -> int:
     p.add_argument("--autoruns", action="store_true")
     p.add_argument("--json", action="store_true")
     p.add_argument("--hashes", action="store_true")
+    p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--exclude", action="append", default=[])
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
@@ -30,8 +32,8 @@ def main() -> int:
     if not has_engine():
         print("no clamscan found, install clamav first")
         return 2
-    cfg = ScanConfig(max_depth=a.depth, max_size_mb=a.max_mb)
-    hits = scan(a.path, cfg.max_depth, cfg.max_size_mb)
+    cfg = ScanConfig(max_depth=a.depth, max_size_mb=a.max_mb, timeout_sec=a.timeout, exclude=tuple(a.exclude))
+    hits = scan(a.path, cfg.max_depth, cfg.max_size_mb, cfg.timeout_sec, cfg.exclude)
     if a.hashes:
         for fp in walk_files(a.path):
             try:
