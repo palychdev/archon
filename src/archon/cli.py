@@ -41,11 +41,15 @@ def main() -> int:
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--menu", action="store_true")
     p.add_argument("--gui", action="store_true")
+    p.add_argument("--setup", action="store_true")
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
         print(__version__)
         return 0
+    if a.setup:
+        from .setup import setup
+        return setup()
     if a.gui:
         from .gui import run_gui
         run_gui()
