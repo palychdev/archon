@@ -1,5 +1,9 @@
 # changelog
 
+## 0.10.0
+- parallel yara and entropy, tui progress
+- live eicar parse check passed
+
 ## 0.9.0
 - watch mode for new files
 - clear hint when engine missing
