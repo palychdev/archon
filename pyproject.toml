@@ -1,0 +1,8 @@
+[project]
+name = "archon"
+version = "0.1.0"
+description = "deep archive scanner on top of clamav"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
