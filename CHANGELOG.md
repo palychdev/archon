@@ -1,5 +1,10 @@
 # changelog
 
+## 0.9.0
+- watch mode for new files
+- clear hint when engine missing
+- working exe build, tested on windows
+
 ## 0.8.0
 - entropy flag for packed files
 - autoruns snap diff, quarantine restore
