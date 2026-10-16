@@ -1,5 +1,25 @@
+import json
 import os
 import sys
+
+
+def snapshot() -> list[str]:
+    return sorted(list_run_keys() + list_startup())
+
+
+def save_snapshot(path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(snapshot(), f, ensure_ascii=False, indent=2)
+
+
+def diff_snapshot(path: str) -> list[str]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = set(json.load(f))
+    except OSError:
+        return ["no baseline, save one first"]
+    now = set(snapshot())
+    return sorted(now - old)
 
 
 def list_run_keys() -> list[str]:
