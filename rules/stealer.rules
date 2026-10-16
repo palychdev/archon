@@ -1,0 +1,8 @@
+rule stealer_generic {
+  strings:
+    $a = "password" nocase
+    $b = "keylog" nocase
+    $c = "clipboard" nocase
+  condition:
+    2 of them
+}
