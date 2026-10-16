@@ -2,7 +2,7 @@ import PyInstaller.__main__
 
 
 PyInstaller.__main__.run([
-    "src/archon/__main__.py",
+    "tools/entry.py",
     "--name", "archon",
     "--onefile",
     "--console",
