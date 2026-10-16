@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -11,7 +12,22 @@ class Hit:
 
 
 def has_engine() -> bool:
-    return shutil.which("clamscan") is not None
+    return shutil.which("clamscan") is not None or os.path.isfile(r"C:\Program Files\ClamAV\clamscan.exe")
+
+
+def user_db() -> str:
+    base = os.environ.get("APPDATA", os.path.expanduser("~"))
+    d = os.path.join(base, "archon", "db")
+    if os.path.isfile(os.path.join(d, "daily.cvd")):
+        return d
+    return ""
+
+
+def exe() -> str:
+    found = shutil.which("clamscan")
+    if found:
+        return found
+    return r"C:\Program Files\ClamAV\clamscan.exe"
 
 
 def engine_hint() -> str:
@@ -22,13 +38,16 @@ def engine_hint() -> str:
 
 def build_args(path: str, depth: int, max_mb: int, exclude: tuple[str, ...] = ()) -> list[str]:
     args = [
-        "clamscan",
+        exe(),
         "-r",
         f"--max-filesize={max_mb}M",
         f"--max-scansize={max_mb}M",
         f"--max-recursion={depth}",
         "--scan-archive=yes",
     ]
+    db = user_db()
+    if db:
+        args.append(f"--database={db}")
     for e in exclude:
         args.append(f"--exclude-dir={e}")
     args.append(path)
