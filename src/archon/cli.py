@@ -39,11 +39,20 @@ def main() -> int:
     p.add_argument("--watch", default="")
     p.add_argument("--tui", action="store_true")
     p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--menu", action="store_true")
+    p.add_argument("--gui", action="store_true")
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
         print(__version__)
         return 0
+    if a.gui:
+        from .gui import run_gui
+        run_gui()
+        return 0
+    if a.menu:
+        from .menu import run_menu
+        return run_menu()
     if a.update:
         return update(a.unofficial)
     if a.snap_save:
