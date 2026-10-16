@@ -1,9 +1,10 @@
 import argparse
 from . import __version__
 from .config import ScanConfig
-from .report import render
+from .report import render, render_json
 from .scanner import has_engine, scan
 from .autoruns import list_run_keys, list_startup
+from .hashes import sha256_of, walk_files
 
 
 def main() -> int:
@@ -12,6 +13,8 @@ def main() -> int:
     p.add_argument("--depth", type=int, default=5)
     p.add_argument("--max-mb", type=int, default=512)
     p.add_argument("--autoruns", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--hashes", action="store_true")
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
@@ -29,7 +32,17 @@ def main() -> int:
         return 2
     cfg = ScanConfig(max_depth=a.depth, max_size_mb=a.max_mb)
     hits = scan(a.path, cfg.max_depth, cfg.max_size_mb)
-    print(render(hits))
+    if a.hashes:
+        for fp in walk_files(a.path):
+            try:
+                print(f"{sha256_of(fp)}  {fp}")
+            except OSError:
+                continue
+        return 0
+    if a.json:
+        print(render_json(hits))
+    else:
+        print(render(hits))
     return 0
 
 
