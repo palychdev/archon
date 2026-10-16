@@ -4,7 +4,8 @@ built on clamav + own yara, focused on nested archives and autostart traces. no 
 
 install:
 - python 3.11+
-- install clamav and make sure `clamscan` and `freshclam` are in PATH
+- `python -m archon.cli --setup` - pulls clamav via winget and refreshes bases
+- by hand: install clamav so `clamscan` and `freshclam` are in PATH
 - optional: `yara` binary or `yara-python` for own rules
 - pip install -e .
 
