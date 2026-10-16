@@ -41,10 +41,13 @@ def parse_line(line: str) -> Hit | None:
     return Hit(left, "", sig)
 
 
-def scan(path: str, depth: int = 5, max_mb: int = 512) -> list[Hit]:
+def scan(path: str, depth: int = 5, max_mb: int = 512, timeout_sec: int = 600, exclude: tuple[str, ...] = ()) -> list[Hit]:
     if not has_engine():
         return []
-    p = subprocess.run(build_args(path, depth, max_mb), capture_output=True, text=True)
+    try:
+        p = subprocess.run(build_args(path, depth, max_mb, exclude), capture_output=True, text=True, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        return [Hit(path, "", "ScanTimeout")]
     out = (p.stdout or "") + "\n" + (p.stderr or "")
     hits: list[Hit] = []
     for line in out.splitlines():
