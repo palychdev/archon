@@ -14,16 +14,19 @@ def has_engine() -> bool:
     return shutil.which("clamscan") is not None
 
 
-def build_args(path: str, depth: int, max_mb: int) -> list[str]:
-    return [
+def build_args(path: str, depth: int, max_mb: int, exclude: tuple[str, ...] = ()) -> list[str]:
+    args = [
         "clamscan",
         "-r",
         f"--max-filesize={max_mb}M",
         f"--max-scansize={max_mb}M",
         f"--max-recursion={depth}",
         "--scan-archive=yes",
-        path,
     ]
+    for e in exclude:
+        args.append(f"--exclude-dir={e}")
+    args.append(path)
+    return args
 
 
 def parse_line(line: str) -> Hit | None:
