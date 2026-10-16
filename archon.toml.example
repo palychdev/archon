@@ -1,0 +1,8 @@
+[scan]
+depth = 5
+max_mb = 512
+timeout = 600
+use_yara = false
+log_file = ""
+exclude = []
+allow_sha256 = []
