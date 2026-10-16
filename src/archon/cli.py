@@ -11,6 +11,8 @@ from .yarasc import match_file
 from .cfgfile import load_toml
 from .scanner import Hit
 from .entropy import is_packed
+from .parallel import map_files
+from .tui import progress
 
 
 def main() -> int:
@@ -35,6 +37,8 @@ def main() -> int:
     p.add_argument("--log", default="")
     p.add_argument("--rescan", default="")
     p.add_argument("--watch", default="")
+    p.add_argument("--tui", action="store_true")
+    p.add_argument("--workers", type=int, default=8)
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
@@ -80,13 +84,23 @@ def main() -> int:
             print(f"new: {fp}")
         return 0
     hits = scan(target, cfg.max_depth, cfg.max_size_mb, cfg.timeout_sec, cfg.exclude)
+    files = walk_files(target)
     if use_yara:
-        for fp in walk_files(target):
-            for rule in match_file(fp):
+        def _ym(fp: str):
+            return [(fp, r) for r in match_file(fp)]
+        for i, pairs in enumerate(map_files(_ym, files, a.workers), 1):
+            if a.tui:
+                progress(i, len(files), "yara")
+            for fp, rule in pairs:
                 hits.append(Hit(fp, "", f"yara:{rule}"))
     if a.entropy:
-        for fp in walk_files(target):
-            if is_packed(fp):
+        def _em(fp: str):
+            return (fp, is_packed(fp))
+        for i, res in enumerate(map_files(_em, files, a.workers), 1):
+            if a.tui:
+                progress(i, len(files), "entropy")
+            fp, packed = res
+            if packed:
                 hits.append(Hit(fp, "", "heuristic:high-entropy"))
     if allow:
         kept: list[Hit] = []
