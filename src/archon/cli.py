@@ -2,7 +2,7 @@ import argparse
 from . import __version__
 from .config import ScanConfig
 from .report import render, render_json
-from .scanner import has_engine, scan
+from .scanner import has_engine, scan, engine_hint
 from .autoruns import list_run_keys, list_startup, save_snapshot, diff_snapshot
 from .hashes import sha256_of, walk_files
 from .update import update
@@ -34,6 +34,7 @@ def main() -> int:
     p.add_argument("--config", default="archon.toml")
     p.add_argument("--log", default="")
     p.add_argument("--rescan", default="")
+    p.add_argument("--watch", default="")
     p.add_argument("path", nargs="?")
     a = p.parse_args()
     if a.version:
@@ -61,7 +62,7 @@ def main() -> int:
         print("give me a path to scan")
         return 1
     if not has_engine():
-        print("no clamscan found, install clamav first")
+        print(engine_hint())
         return 2
     file_cfg = load_toml(a.config).get("scan", {})
     depth = a.depth if a.depth is not None else int(file_cfg.get("depth", 5))
@@ -72,6 +73,12 @@ def main() -> int:
     use_yara = a.yara or bool(file_cfg.get("use_yara", False))
     log_file = a.log or str(file_cfg.get("log_file", ""))
     cfg = ScanConfig(max_depth=depth, max_size_mb=max_mb, timeout_sec=timeout, exclude=exclude)
+    if a.watch:
+        from .watch import poll
+        print(f"watching {target}")
+        for fp in poll(target):
+            print(f"new: {fp}")
+        return 0
     hits = scan(target, cfg.max_depth, cfg.max_size_mb, cfg.timeout_sec, cfg.exclude)
     if use_yara:
         for fp in walk_files(target):
