@@ -1,42 +1,451 @@
 # archon
 
-digs through archives and finds the nasty bits. clamav inside, own yara on top, no scare tactics - just what, where and why.
+![version](https://img.shields.io/badge/version-0.14.0-blue)
+![python](https://img.shields.io/badge/python-3.11%2B-3776ab)
+![platform](https://img.shields.io/badge/platform-windows%20x64-lightgrey)
+![license](https://img.shields.io/badge/license-MIT-green)
+[![ci](https://github.com/palychdev/archon/actions/workflows/test.yml/badge.svg)](https://github.com/palychdev/archon/actions/workflows/test.yml)
 
-![ci](https://github.com/palychdev/archon/actions/workflows/test.yml/badge.svg)
+**archon** — сканер, который заглядывает внутрь архивов и показывает, что именно нашлось.
+Движок — ClamAV, поверх него собственные YARA-правила и эвристика энтропии. Без запугивания
+и красных экранов: для каждой находки видно файл, вложенный путь и сигнатуру, а упакованный,
+но чистый файл получает спокойную пометку `high-entropy`, а не название вируса.
 
-## why another scanner
+```
+ClamAV как движок       сигнатуры и распаковка zip/rar/7z/iso
+Свои YARA-правила       майнеры и стилеры, libyara или бинарник
+Отчёт без тумана        файл, вложенный путь, сигнатура; JSON для скриптов
+Базы без админа         freshclam.conf и базы в %APPDATA%\archon
+Три входа               CLI, пошаговое меню, простое окно
+```
 
-most scanners either scream at everything or hide what they do. archon shows the file, the inner file if it was packed, and the sig name. packed-but-clean stuff gets a calm `high-entropy` note instead of a red alert.
+## Содержание
 
-## 30 seconds start
+- [Возможности](#возможности)
+- [Как это работает](#как-это-работает)
+- [Требования](#требования)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+- [Командная строка](#командная-строка)
+- [Конфигурация](#конфигурация)
+- [Примеры](#примеры)
+- [Отчёт и коды возврата](#отчёт-и-коды-возврата)
+- [Карантин, автозапуск, watch](#карантин-автозапуск-watch)
+- [Архитектура](#архитектура)
+- [YARA-правила](#yara-правила)
+- [Ограничения](#ограничения)
+- [Разработка](#разработка)
+- [Статус](#статус)
+- [Правовая информация](#правовая-информация)
+- [Лицензия](#лицензия)
+
+## Возможности
+
+### Сканирование
+
+- рекурсивный обход каталога или проверка одиночного файла;
+- вложенные архивы: zip, rar, 7z, iso и другие форматы, которые умеет распаковывать установленный ClamAV;
+- ограничители, чтобы один монстр не подвесил машину: `--depth` для рекурсии архивов, `--max-mb` для размера файла и объёма распаковки, `--timeout` для времени одного запуска `clamscan`;
+- по таймауту скан прерывается, в отчёт попадает `ScanTimeout` с кодом возврата 1;
+- исключение каталогов через `--exclude` (флаг можно повторять);
+- allowlist по SHA-256 в конфиге: известные файлы не попадают в отчёт;
+- вывод SHA-256 для файлов или каталога через `--hashes`.
+
+### Детект
+
+- сигнатуры ClamAV, включая содержимое архивов;
+- собственные YARA-правила для майнеров и стилеров — через `yara-python` или бинарник `yara`;
+- эвристика упакованности: энтропия Шеннона первых 1 МиБ, порог 7.5, пометка `heuristic:high-entropy`;
+- параллельная обработка файлов для YARA и энтропии: `--workers`, по умолчанию 8 потоков;
+- прогресс-бар в терминале: `--tui`.
+
+### Отчётность
+
+- текстовый отчёт `path | inner | sig`;
+- JSON-массив для скриптов и CI: `--json`;
+- лог-файл: `--log`, отчёт дописывается в конец;
+- код возврата 1 при находках — удобно для планировщика и пайплайнов;
+- понятное `clean, nothing found`, когда всё чисто.
+
+### Реакция на находки
+
+- карантин: перенос найденных файлов в отдельный каталог;
+- восстановление из карантина в указанный каталог;
+- список автозапуска Windows: ключи Run в HKCU/HKLM и папка Startup;
+- снимок автозапуска и дифф по нему — видно, что добавилось;
+- watch-режим: дождаться новых файлов в каталоге и сообщить о них.
+
+### Интерфейсы и настройка
+
+- обычный CLI с флагами;
+- `--menu` — пошаговый мастер без запоминания флагов;
+- `--gui` — окно на tkinter: выбрать папку, отметить YARA/энтропию, запустить;
+- `--setup` — установка ClamAV через winget и первичная настройка;
+- `--update` — обновление баз через freshclam, `--unofficial` — дополнительные сигнатуры;
+- конфиг `archon.toml` для лимитов, исключений, allowlist и лога.
+
+## Как это работает
+
+1. **Проверка движка.** archon ищет `clamscan` в `PATH` или по стандартному пути `C:\Program Files\ClamAV\clamscan.exe`. Если движка нет, скан не начинается: выводится подсказка, код возврата 2.
+
+2. **Скан ClamAV.** Запускается `clamscan` с рекурсией и разбором архивов. Упрощённо команда выглядит так:
+
+   ```
+   clamscan -r --scan-archive=yes --max-filesize=512M --max-scansize=512M --max-recursion=5 --database=%APPDATA%\archon\db <path>
+   ```
+
+   Если в `%APPDATA%\archon\db` есть `daily.cvd`, archon передаёт `--database` и работает на пользовательских базах. Если нет — используется база самого ClamAV. Каждый `--exclude` добавляет `--exclude-dir`.
+
+3. **Разбор вывода.** Из строк со словом `FOUND` собираются находки: путь, сигнатура и, если файл был внутри архива, вложенный путь. Строка `pack.zip!inner.exe: Win.Trojan FOUND` превращается в `path=pack.zip`, `inner=inner.exe`, `sig=Win.Trojan`.
+
+4. **Дополнительные проходы.** Если включены `--yara` или `--entropy`, archon отдельно обходит файлы и прогоняет правила и энтропию, распараллеливая работу внутри каждого прохода. Это независимые проверки поверх ClamAV.
+
+5. **Allowlist.** Если в конфиге задан `allow_sha256`, для каждой находки считается SHA-256. Для находки внутри архива хешируется сам архив. Совпавшие хеши отбрасываются.
+
+6. **Вывод и действие.** Отчёт печатается в терминал, JSON или лог. Дальше — карантин, если он запрошен, и код возврата: 1 при находках, 0 при чистом результате.
+
+## Требования
+
+- Windows 10/11 x64 — основная платформа;
+- Python 3.11+;
+- ClamAV с `clamscan` и `freshclam` — ставится через `--setup` или вручную;
+- YARA — опционально: `yara-python` или бинарник `yara` в `PATH`;
+- PyInstaller — только если собираете exe.
+
+Сканирующее ядро не привязано к Windows и работает на Linux/macOS при установленном ClamAV. Но `--setup`, автозапуск и стандартные пути рассчитаны на Windows.
+
+## Установка
 
 ```sh
 git clone https://github.com/palychdev/archon
 cd archon
 pip install -e .
-python -m archon.cli --setup
-python -m archon.cli --gui
+python -m archon --setup
 ```
 
-no terminal mood? `--menu` walks you through, `--gui` is a plain window: pick folder, tick boxes, hit scan.
+`--setup` делает следующее:
 
-## what it does
+- проверяет, есть ли `clamscan`;
+- если нет — ставит ClamAV через `winget install -e --id Cisco.ClamAV`;
+- после установки готовит пользовательский `%APPDATA%\archon\freshclam.conf` с базой в `%APPDATA%\archon\db`;
+- если `clamscan` уже виден в `PATH`, запускает `freshclam` и скачивает базы;
+- если `clamscan` был установлен ещё до запуска, просто сообщает об этом и ничего не меняет.
 
-- nested packs: zip/rar/7z/iso, depth/size/timeout guards so one monster archive can't hang the box
-- clamav bases via freshclam, user-local config so no admin dance
-- own `rules/` for miners and stealers, runs via yara lib or binary
-- entropy flag for packed unknowns
-- autostart list + snapshot diff (`--snap-save base.json`, `--snap-diff base.json`)
-- quarantine move + restore + rescan
-- json out + log file + exit 1 on hits, scripts love it
-- watch mode for drop folders, parallel yara/entropy with `--workers`
+При установке через `--setup` конфиг и базы лежат в профиле пользователя, поэтому обновление баз не требует прав администратора. Сам ClamAV ставится системно через winget.
 
-## honest limits
+Если winget нет, поставьте ClamAV вручную с [clamav.net](https://www.clamav.net/), добавьте его в `PATH` и выполните:
 
-- needs clamav binaries, they're big and bases update daily
-- full `C:\` scan is slow, start with downloads
-- heuristics can false-positive on packed games and installers, allowlist them by sha256 in `archon.toml`
+```sh
+python -m archon --update
+```
 
-## credits
+Если ClamAV установился, но `clamscan` не виден в текущем терминале, перезапустите терминал и повторите `--update`.
 
-engine: clamav by Cisco Talos (GPLv2, you install it, we just call it). yara rules here are ours. see THIRD-PARTY.md.
+Отдельной команды `archon` в `PATH` нет — запуск идёт через `python -m archon`.
+
+YARA можно подключить любым из двух способов:
+
+```sh
+pip install yara-python
+```
+
+или установить бинарник `yara` и добавить его в `PATH`. Если нет ни того, ни другого, YARA-проверка молча пропускается.
+
+## Быстрый старт
+
+```sh
+# обычный скан папки
+python -m archon C:\Users\me\Downloads
+
+# ClamAV + YARA + энтропия, с прогрессом
+python -m archon --yara --entropy --tui D:\drop
+
+# JSON для скрипта
+python -m archon --json D:\drop
+
+# без флагов: мастер или окно
+python -m archon --menu
+python -m archon --gui
+```
+
+Для `--gui` нужен tkinter. В сборках Python с python.org он уже есть; на Linux может понадобиться пакет `python3-tk`.
+
+## Командная строка
+
+### Цель и лимиты
+
+| Аргумент | Что делает |
+|---|---|
+| `PATH` | файл или каталог для сканирования |
+| `--rescan PATH` | альтернативный способ задать цель, если путь приходит из скрипта |
+| `--depth N` | глубина рекурсии архивов, по умолчанию 5 |
+| `--max-mb N` | лимит размера файла и объёма распаковки, МБ, по умолчанию 512 |
+| `--timeout SEC` | таймаут одного запуска `clamscan`, секунды, по умолчанию 600 |
+| `--exclude DIR` | исключить каталог; флаг можно повторять |
+| `--config FILE` | путь к TOML-конфигу, по умолчанию `archon.toml` |
+
+### Детект и отчёт
+
+| Аргумент | Что делает |
+|---|---|
+| `--yara` | прогнать YARA-правила из `rules/` |
+| `--entropy` | отметить файлы с высокой энтропией |
+| `--workers N` | потоков для YARA и энтропии, по умолчанию 8 |
+| `--tui` | прогресс-бар при проходах YARA и энтропии |
+| `--json` | вывести отчёт JSON-массивом |
+| `--log FILE` | дописать отчёт в файл |
+| `--hashes` | вывести SHA-256 файлов вместо отчёта о находках |
+
+### Действия и интерфейсы
+
+| Аргумент | Что делает |
+|---|---|
+| `--quarantine DIR` | перенести найденные файлы в карантин |
+| `--restore DIR` | восстановить файлы из карантина; позиционный `PATH` — куда, по умолчанию текущий каталог |
+| `--autoruns` | показать автозапуск Windows |
+| `--snap-save FILE` | сохранить снимок автозапуска |
+| `--snap-diff FILE` | показать новые записи относительно снимка |
+| `--watch` | ждать новые файлы; каталог задаётся позиционным `PATH` |
+| `--setup` | установить и настроить ClamAV |
+| `--update` | обновить базы через `freshclam` |
+| `--unofficial` | вместе с `--update` запустить `clamav-unofficial-sigs.sh`, если он есть |
+| `--menu` | пошаговый мастер |
+| `--gui` | окно tkinter |
+| `--version` | показать версию |
+
+`--hashes` и `--watch` проходят общую проверку движка, поэтому требуют установленный `clamscan`, даже если сам ClamAV в этих сценариях не нужен. `--watch` — переключатель: значение флага не используется, каталог берётся из позиционного аргумента.
+
+## Конфигурация
+
+По умолчанию archon читает `archon.toml` из текущего каталога. Другой путь задаётся через `--config`. Пример:
+
+```toml
+[scan]
+depth = 5
+max_mb = 512
+timeout = 600
+use_yara = false
+log_file = ""
+exclude = ["node_modules", ".git"]
+allow_sha256 = []
+```
+
+| Ключ | Назначение |
+|---|---|
+| `depth` | глубина рекурсии архивов |
+| `max_mb` | лимит размера файла и распаковки, МБ |
+| `timeout` | таймаут `clamscan`, секунды |
+| `use_yara` | включать YARA без флага `--yara` |
+| `log_file` | путь к логу; пустая строка — не писать |
+| `exclude` | список каталогов-исключений |
+| `allow_sha256` | список SHA-256, находки на которые игнорируются |
+
+Флаги командной строки перекрывают значения из конфига. Если файла нет или TOML не парсится, используются значения по умолчанию. Мастер `--menu` и окно `--gui` конфиг не читают — они работают на дефолтных лимитах.
+
+Пользовательский конфиг freshclam лежит отдельно: `%APPDATA%\archon\freshclam.conf`.
+
+## Примеры
+
+```powershell
+# обычный скан
+python -m archon C:\Users\me\Downloads
+
+# глубоко и с большими лимитами
+python -m archon --depth 8 --max-mb 2048 D:\archives
+
+# не лезть в тяжелые каталоги
+python -m archon --exclude node_modules --exclude .git D:\projects
+
+# ClamAV + YARA + энтропия, 16 потоков
+python -m archon --yara --entropy --workers 16 D:\drop
+
+# JSON в файл (PowerShell)
+python -m archon --json D:\drop | Out-File -Encoding utf8 report.json
+
+# дописывать текстовый отчёт в лог
+python -m archon --log archon.log D:\drop
+
+# карантин и восстановление
+python -m archon --quarantine .quarantine D:\drop
+python -m archon --restore .quarantine C:\restored
+
+# автозапуск: снимок и новые записи
+python -m archon --snap-save base.json
+python -m archon --snap-diff base.json
+```
+
+## Отчёт и коды возврата
+
+Текстовый отчёт:
+
+```
+path | inner | sig
+C:\drop\pack.zip | invoice.exe | Win.Trojan.Agent
+C:\drop\setup.exe | - | heuristic:high-entropy
+```
+
+Чистый результат:
+
+```
+clean, nothing found
+```
+
+JSON выглядит так:
+
+```json
+[
+  {
+    "path": "C:\\drop\\pack.zip",
+    "inner": "invoice.exe",
+    "sig": "Win.Trojan.Agent"
+  }
+]
+```
+
+| Код | Значение |
+|---|---|
+| 0 | чисто; или успешно выполнена служебная команда |
+| 1 | есть находки, включая `high-entropy` и `ScanTimeout`; карантин с находками; не задан путь |
+| 2 | нет `clamscan` для скана или `freshclam` для `--update` |
+| 3 | ClamAV установлен, но `clamscan` не появился в `PATH` после `--setup` |
+| другой | код winget или freshclam, переданный как есть |
+
+`high-entropy` — эвристика, а не вердикт: она попадает в отчёт как находка и тоже даёт код 1. Учитывайте это в скриптах и не путайте с детектом ClamAV. `ScanTimeout` означает, что скан не уложился в `--timeout`.
+
+## Карантин, автозапуск, watch
+
+### Карантин
+
+```sh
+python -m archon --quarantine .quarantine D:\drop
+python -m archon --restore .quarantine C:\restored
+```
+
+`--quarantine` переносит уникальные пути находок в указанный каталог и печатает `moved <dst>`. Отчёт при этом не выводится. Если находка была внутри архива, переносится сам архив.
+
+Восстановление переносит все файлы из карантина в целевой каталог плоским списком: исходные пути не сохраняются. При переносе файл с уже существующим в карантине именем может быть пропущен, поэтому восстанавливайте в пустую папку, а не поверх рабочей.
+
+### Автозапуск
+
+```sh
+python -m archon --autoruns
+python -m archon --snap-save base.json
+python -m archon --snap-diff base.json
+```
+
+На Windows `--autoruns` показывает значения из `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, те же ключи в HKLM и элементы из папки Startup. На других системах список пустой.
+
+`--snap-save` сохраняет снимок в JSON, `--snap-diff` печатает только новые записи относительно снимка. Удалённые записи дифф не показывает. Если снимка нет, выводится `no baseline, save one first`.
+
+### Watch
+
+```sh
+python -m archon C:\drop --watch 1
+```
+
+Режим опрашивает каталог раз в 5 секунд, печатает новые файлы и завершается после первой пачки. Это разовое ожидание, а не постоянный мониторинг: скан новых файлов не запускается, карантин не применяется. Для непрерывной работы запускайте команду заново или оберните её в цикл. Каталог берётся из позиционного аргумента; `1` после `--watch` — просто значение-переключатель.
+
+## Архитектура
+
+| Путь | Назначение |
+|---|---|
+| `src/archon/cli.py` | разбор аргументов и все сценарии: скан, карантин, снимки, watch |
+| `src/archon/scanner.py` | вызов `clamscan`, проверка движка, разбор `FOUND`, вложенные пути |
+| `src/archon/yarasc.py` | YARA через `yara-python` или бинарник `yara` |
+| `src/archon/entropy.py` | энтропия Шеннона и порог упакованности |
+| `src/archon/quarantine.py` | перенос в карантин и восстановление |
+| `src/archon/autoruns.py` | ключи Run, папка Startup, снимки и дифф |
+| `src/archon/update.py` | обновление баз через freshclam и пользовательский конфиг |
+| `src/archon/setup.py` | установка ClamAV через winget и первичная настройка |
+| `src/archon/report.py` | текстовый и JSON-отчёт |
+| `src/archon/hashes.py` | SHA-256 и обход файлов |
+| `src/archon/watch.py` | ожидание новых файлов |
+| `src/archon/parallel.py` | пул потоков для YARA и энтропии |
+| `src/archon/tui.py` | прогресс-бар |
+| `src/archon/menu.py`, `src/archon/gui.py` | мастер и окно tkinter |
+| `src/archon/cfgfile.py`, `src/archon/config.py` | TOML-конфиг и dataclass настроек |
+| `rules/*.rules` | YARA-правила |
+| `tests/` | тесты разбора вывода и энтропии |
+| `tools/` | entry point и сборка PyInstaller |
+
+Стек: Python 3.11+ и стандартная библиотека, ClamAV как внешний движок, YARA через `yara-python` или бинарник, tkinter для окна и PyInstaller для сборки exe.
+
+Поток данных короткий:
+
+```
+cli -> scanner (clamscan) -> hits
+    -> yarasc / entropy (в потоках) -> hits
+    -> allow_sha256 -> report / quarantine / exit code
+```
+
+## YARA-правила
+
+В комплекте два правила: `rules/miner.rules` и `rules/stealer.rules`. Например, майнер ловится по сочетанию признаков:
+
+```yara
+rule miner_xmrig {
+  strings:
+    $a = "xmrig" nocase
+    $b = "cryptonight" nocase
+    $c = "stratum+tcp" nocase
+  condition:
+    2 of them
+}
+```
+
+Своё правило — это новый файл с расширением `.rules` в каталоге `rules/`. Вложенные каталоги не обходятся, каждый `.rules`-файл компилируется и применяется отдельно.
+
+Каталог `rules` ищется относительно текущего рабочего каталога. Запускайте archon из корня проекта или положите `rules/` рядом с тем местом, откуда запускаете exe. В собранный `archon.exe` правила не встраиваются.
+
+YARA проверяет файлы как есть и не распаковывает архивы — за содержимое архивов отвечает ClamAV. Если нет `yara-python`, бинарника `yara` или самого каталога `rules/`, проход молча пропускается.
+
+## Ограничения
+
+- **ClamAV нужен снаружи.** archon не тащит его в комплекте. Без `clamscan` скан не запускается, а базы придётся регулярно обновлять: они большие и меняются ежедневно.
+- **YARA и энтропия — второй проход.** Они обходят все файлы заново, на больших деревьях это заметно медленнее. Архивы для них не распаковываются.
+- **Энтропия шумит.** Упакованные игры, установщики и архивы могут получить `heuristic:high-entropy`. Это не заражение; добавляйте известные файлы в `allow_sha256`.
+- **Watch — разовый.** Режим только сообщает о новых файлах и выходит. Постоянного мониторинга и автопоказа нет.
+- **Карантин плоский.** Исходные пути не сохраняются, а одинаковые имена из разных папок могут привести к пропуску файла при переносе.
+- **Мастер и окно проще CLI.** `--menu` и `--gui` не читают `archon.toml`, не применяют allowlist и исключения.
+- **Нет резидентной защиты.** archon не работает как антивирус в реальном времени, не подписан и не заменяет полноценный AV. Он для точечной проверки файлов и папок.
+- **Windows-специфика.** `--setup`, автозапуск и стандартные пути рассчитаны на Windows; на Linux/macOS сканирование работает, но эти функции недоступны.
+- **Таймаут общий.** `--timeout` ограничивает весь запуск `clamscan`, а не отдельный файл. При срабатывании скан останавливается целиком и помечается `ScanTimeout`.
+
+## Разработка
+
+```powershell
+git clone https://github.com/palychdev/archon
+cd archon
+pip install -e .
+
+# по желанию: тесты, линтер, YARA, сборка exe
+pip install pytest ruff yara-python pyinstaller
+
+$env:PYTHONPATH = "src"
+python -m pytest -q
+ruff check src tests
+```
+
+CI гоняется на `windows-latest` с Python 3.11: проверяет `compileall` и тесты разбора вывода. Локально все тесты запускаются через pytest.
+
+Сборка exe:
+
+```sh
+python tools/build_exe.py
+```
+
+На выходе — `dist\archon.exe`, onefile-сборка с консолью. Помните, что `rules/` в неё не попадают: положите каталог с правилами рядом с exe или запускайте из корня проекта.
+
+## Статус
+
+**Готово:** версия 0.14.0 — CLI, мастер, окно, ClamAV + YARA + энтропия, локальные базы без администратора, карантин, автозапуск, watch, сборка exe и CI.
+
+**Идеи для следующих версий:** непрерывный watch со сканированием, метаданные карантина и восстановление по исходным путям, YARA по распакованным архивам, подпись exe.
+
+## Правовая информация
+
+Инструмент предназначен для проверки собственных файлов и систем. Он не заменяет антивирус, а эвристики могут ошибаться: решения о карантине принимайте осознанно. Не запускайте archon на чужих системах без разрешения. Ответственность за использование лежит на пользователе.
+
+## Лицензия
+
+[MIT](LICENSE). ClamAV распространяется по GPLv2 (Cisco Talos) и не входит в поставку — archon только вызывает установленный бинарник. YARA распространяется по лицензии Apache 2.0/BSD в зависимости от сборки; правила в `rules/` — собственные. Полный список сторонних компонентов — в [THIRD-PARTY.md](THIRD-PARTY.md).
